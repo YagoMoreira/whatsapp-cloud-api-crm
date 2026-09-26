@@ -1,0 +1,153 @@
+{
+  "name": "CampanhaWhatsApp",
+  "type": "object",
+
+  // Um envio em lote pelo WhatsApp: marketing ou aviso para muita gente.
+  //
+  // ── Por que isto é uma FILA e não um disparo ────────────────────────────────
+  //
+  // A Meta limita quantos destinatários ÚNICOS um número alcança por 24h, e o
+  // limite sobe por degraus conforme volume e qualidade se sustentam: 250 →
+  // 1.000 → 10.000 → 100.000. Número recém-registrado começa no primeiro
+  // degrau. Mandar 2.000 de uma vez não falha de leve — falha no meio, e a
+  // rajada de recusas derruba a nota de qualidade, que é o que define o degrau.
+  //
+  // Por isso a campanha guarda o público inteiro e entrega em rodadas: o
+  // `campanhaWhatsAppDisparo` pega o que cabe no teto do dia, manda, e volta
+  // amanhã. Uma campanha de 2.000 é normal levar uma semana, e isso é o
+  // desenho funcionando, não uma lentidão a corrigir.
+  //
+  // ── Por que consultor cria e administrador aprova ──────────────────────────
+  //
+  // Campanha é a ação de maior alcance do canal: erra uma vez e o custo não é
+  // uma mensagem errada, é o número da empresa. O consultor monta (ele conhece
+  // a carteira), e alguém que responde pelo número libera. Enquanto não
+  // aprovada, nada sai — `aprovadoPorUserId` vazio é trava, não pendência
+  // administrativa.
+  //
+  // O conteúdo é SEMPRE um template aprovado pela Meta. Não existe campanha de
+  // texto livre: fora da janela de 24h a Meta recusa qualquer outra coisa, e
+  // numa campanha a janela está fechada para quase todo mundo por definição.
+  "properties": {
+    "nome": {
+      "type": "string",
+      "description": "Nome interno da campanha, ex.: 'Aviso de recesso — dezembro'. Só a equipe vê"
+    },
+    "descricao": {
+      "type": "string",
+      "description": "Para que serve e por que foi criada. É o que o administrador lê antes de aprovar"
+    },
+    "finalidade": {
+      "type": "string",
+      "enum": ["marketing", "aviso"],
+      "default": "aviso",
+      "description": "Marketing (oferta, novidade comercial) ou aviso operacional (recesso, mudança de endereço, manutenção). Não muda o código: muda o que o administrador precisa pesar ao aprovar, e a categoria do template que faz sentido usar"
+    },
+
+    // ── O que vai ser mandado ────────────────────────────────────────────────
+    "templateId": {
+      "type": "string",
+      "description": "Id do TemplatesMensagem escolhido. O nome e o idioma são copiados abaixo no momento do envio, para a campanha continuar legível se o template for editado depois"
+    },
+    "templateNome": {
+      "type": "string",
+      "description": "metaNome do template, como a Meta o conhece"
+    },
+    "templateIdioma": {
+      "type": "string",
+      "default": "pt_BR",
+      "description": "Idioma do template aprovado"
+    },
+    "variaveis": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "origem": {
+            "type": "string",
+            "enum": ["fixo", "campo"],
+            "description": "'fixo' = o mesmo texto para todos; 'campo' = lido do cadastro de cada destinatário"
+          },
+          "valor": {
+            "type": "string",
+            "description": "O texto, quando origem é 'fixo'"
+          },
+          "campo": {
+            "type": "string",
+            "enum": ["nome", "primeiroNome", "empresa", "responsavelNome"],
+            "description": "Qual campo do cadastro preenche, quando origem é 'campo'"
+          }
+        }
+      },
+      "description": "Como preencher {{1}}, {{2}}… NA ORDEM. Mesma ordem de metaVariaveis do template — inverter não dá erro, só manda a frase trocada"
+    },
+
+    // ── Ciclo de vida ────────────────────────────────────────────────────────
+    "status": {
+      "type": "string",
+      "enum": [
+        "rascunho",
+        "aguardando_aprovacao",
+        "aprovada",
+        "enviando",
+        "concluida",
+        "recusada",
+        "cancelada"
+      ],
+      "default": "rascunho",
+      "description": "rascunho = ainda montando; aguardando_aprovacao = na fila do admin; aprovada = liberada, o cron pega na próxima rodada; enviando = tem rodada em andamento; concluida = não sobrou destinatário pendente; recusada/cancelada = não sai mais nada"
+    },
+    "criadoPorUserId": { "type": "string", "description": "Quem montou. Vem da sessão, nunca do corpo da requisição" },
+    "criadoPorNome": { "type": "string" },
+    "aprovadoPorUserId": {
+      "type": "string",
+      "description": "Administrador que liberou. VAZIO É TRAVA: o disparo confere este campo, não só o status"
+    },
+    "aprovadoPorNome": { "type": "string" },
+    "aprovadaEm": { "type": "string", "format": "date-time" },
+    "motivoDecisao": {
+      "type": "string",
+      "description": "Por que foi recusada, ou observação de quem aprovou. Quem montou a campanha precisa saber o que corrigir"
+    },
+
+    // ── Ritmo ────────────────────────────────────────────────────────────────
+    "limiteDiario": {
+      "type": "number",
+      "default": 200,
+      "description": "Teto de envios por dia desta campanha. Padrão conservador abaixo do degrau de 250 da Meta, porque as automações e o atendimento humano dividem o mesmo teto do número"
+    },
+    "enviadasHoje": {
+      "type": "number",
+      "default": 0,
+      "description": "Quanto já saiu na data de `diaDaContagem`. Zerado pelo disparo quando o dia vira"
+    },
+    "diaDaContagem": {
+      "type": "string",
+      "description": "Data (YYYY-MM-DD, UTC) a que `enviadasHoje` se refere"
+    },
+
+    // ── Placar ───────────────────────────────────────────────────────────────
+    "totalDestinatarios": { "type": "number", "default": 0 },
+    "totalEnviadas": { "type": "number", "default": 0 },
+    "totalFalhas": { "type": "number", "default": 0 },
+    "totalPulados": {
+      "type": "number",
+      "default": 0,
+      "description": "Quem foi descartado por opt-out, falta de telefone ou repetição. Pulado NÃO é falha: é trava funcionando"
+    },
+    "iniciadaEm": { "type": "string", "format": "date-time" },
+    "concluidaEm": { "type": "string", "format": "date-time" },
+    "ultimaRodadaEm": { "type": "string", "format": "date-time" }
+  },
+  "required": ["nome"],
+
+  // Fechada ao navegador, como WhatsAppConversa e AuditoriaLog. Tudo passa
+  // pelas funções, que conferem sessão, alcance e — no caso de aprovar — se
+  // quem pediu é administrador de verdade.
+  "rls": {
+    "read":   { "user_condition": { "role": "__negado__" } },
+    "create": { "user_condition": { "role": "__negado__" } },
+    "update": { "user_condition": { "role": "__negado__" } },
+    "delete": { "user_condition": { "role": "__negado__" } }
+  }
+}

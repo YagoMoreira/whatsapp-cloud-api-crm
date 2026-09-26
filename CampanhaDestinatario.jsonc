@@ -1,0 +1,75 @@
+{
+  "name": "CampanhaDestinatario",
+  "type": "object",
+
+  // Uma linha por pessoa numa campanha, com o destino de cada uma.
+  //
+  // Existe separada da campanha por três motivos práticos:
+  //
+  // 1. A campanha é entregue em rodadas ao longo de dias. Sem uma linha por
+  //    pessoa não há como saber de quem falta, e retomar viraria adivinhação.
+  // 2. "Falhou" e "pulado" são coisas diferentes e as duas importam. Falhou é a
+  //    Meta recusando; pulado é a nossa trava segurando (opt-out, sem telefone,
+  //    repetido). Somar os dois num contador só esconderia justamente o que
+  //    alguém precisa olhar depois.
+  // 3. O telefone é congelado aqui no momento em que a pessoa entra na
+  //    campanha. Se o cadastro mudar de número no meio da fila, a campanha
+  //    continua sabendo para onde tinha mandado.
+  //
+  // A chave de deduplicação é (campanhaId, telefone) e não (campanhaId,
+  // alvoId): dois cadastros diferentes com o mesmo número são uma pessoa só do
+  // lado de lá, e receber a mesma campanha duas vezes é o comportamento que
+  // gera denúncia.
+  "properties": {
+    "campanhaId": { "type": "string" },
+
+    "tipo": {
+      "type": "string",
+      "enum": ["cliente", "prospect"],
+      "description": "De qual cadastro esta pessoa veio"
+    },
+    "alvoId": { "type": "string", "description": "Id do Cliente ou do Prospect" },
+    "nome": { "type": "string", "description": "Nome no momento da seleção — é o que aparece na tela da campanha" },
+    "empresa": { "type": "string" },
+    "responsavelUserId": {
+      "type": "string",
+      "description": "Dono do cadastro na hora da seleção. É o que permite ao consultor acompanhar a própria fatia de uma campanha grande"
+    },
+    "telefone": {
+      "type": "string",
+      "description": "Normalizado (E.164 sem '+'), congelado na seleção. Vazio vira 'pulado: sem telefone', não erro"
+    },
+
+    "status": {
+      "type": "string",
+      "enum": ["pendente", "enviado", "entregue", "lido", "falhou", "pulado"],
+      "default": "pendente",
+      "description": "pendente = ainda na fila; enviado/entregue/lido acompanham o status da Meta pelo wamid; falhou = a Meta recusou; pulado = uma trava nossa segurou"
+    },
+    "motivo": {
+      "type": "string",
+      "description": "Por que foi pulado ou por que falhou, em português e legível. É a coluna que alguém lê quando pergunta 'por que fulano não recebeu?'"
+    },
+
+    "wamid": {
+      "type": "string",
+      "description": "Id da mensagem na Meta. Liga esta linha ao WhatsAppMensagem e é por ele que o webhook avança o status"
+    },
+    "conversaId": { "type": "string", "description": "Conversa em que a mensagem caiu — a resposta do cliente volta por ela" },
+    "mensagemId": { "type": "string", "description": "Id do WhatsAppMensagem gravado" },
+    "enviadoEm": { "type": "string", "format": "date-time" },
+    "tentativas": {
+      "type": "number",
+      "default": 0,
+      "description": "Quantas vezes o disparo tentou esta linha. Serve para desistir de um número que falha sempre, em vez de arrastá-lo por todas as rodadas"
+    }
+  },
+  "required": ["campanhaId"],
+
+  "rls": {
+    "read":   { "user_condition": { "role": "__negado__" } },
+    "create": { "user_condition": { "role": "__negado__" } },
+    "update": { "user_condition": { "role": "__negado__" } },
+    "delete": { "user_condition": { "role": "__negado__" } }
+  }
+}

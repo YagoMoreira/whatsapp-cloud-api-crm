@@ -1,0 +1,130 @@
+{
+  "name": "WhatsAppConversa",
+  "type": "object",
+
+  // Uma linha por NÚMERO de cliente, e não por atendimento.
+  //
+  // O WhatsApp não tem o conceito de "assunto": o cliente manda mensagem no
+  // mesmo fio hoje sobre um ticket e daqui a um mês sobre outro. Modelar a
+  // conversa por atendimento obrigaria a decidir, a cada mensagem que chega, a
+  // qual atendimento ela pertence — e a errar. Aqui a conversa é o fio do
+  // número; o que se prende a ela (ticket, cliente, prospect) são vínculos que
+  // podem mudar sem quebrar o histórico.
+  //
+  // A chave real é o par (telefone, numeroId): a mesma pessoa falando com dois
+  // números nossos são duas conversas, porque na Meta são mesmo duas.
+  "properties": {
+    "telefone": {
+      "type": "string",
+      "description": "wa_id do contato — E.164 sem '+' e sem pontuação, ex.: 5527999998888. Chave de casamento com Cliente/Prospect/Contato"
+    },
+    "telefoneExibicao": {
+      "type": "string",
+      "description": "Mesmo número formatado para leitura, ex.: +55 (27) 99999-8888"
+    },
+    "numeroId": {
+      "type": "string",
+      "description": "phone_number_id do número NOSSO que atende esta conversa (a Meta identifica assim)"
+    },
+    "nomePerfil": {
+      "type": "string",
+      "description": "Nome que o contato exibe no WhatsApp. Vem da Meta, não é editável aqui"
+    },
+
+    // ── Vínculo com o cadastro ────────────────────────────────────────────
+    //
+    // Genérico de propósito: o mesmo número aparece como prospect antes de
+    // fechar e como contato de cliente depois. Trocar o vínculo é um UPDATE,
+    // não uma migração de mensagens.
+    "vinculoTipo": {
+      "type": "string",
+      "enum": ["nenhum", "cliente", "prospect", "contato", "agente"],
+      "default": "nenhum",
+      "description": "Que cadastro está do outro lado do número"
+    },
+    "vinculoId": {
+      "type": "string",
+      "description": "ID do registro vinculado"
+    },
+    "vinculoNome": {
+      "type": "string",
+      "description": "Nome do registro vinculado, desnormalizado para a lista não carregar quatro entidades"
+    },
+    "ticketId": {
+      "type": "string",
+      "description": "SuporteTicket aberto a partir desta conversa, quando houver"
+    },
+
+    // ── Estado do fio ─────────────────────────────────────────────────────
+    "ultimaMensagemEm": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Instante da última mensagem, em qualquer direção — é por ele que a lista ordena"
+    },
+    "ultimaMensagemPreview": {
+      "type": "string",
+      "description": "Primeiros caracteres da última mensagem, para a lista não ler a coleção inteira"
+    },
+    "ultimaMensagemDirecao": {
+      "type": "string",
+      "enum": ["entrada", "saida"],
+      "description": "Quem falou por último"
+    },
+
+    // A JANELA DE ATENDIMENTO — a regra da Meta que o desenho inteiro respeita.
+    //
+    // Fora dos 24h contados da ÚLTIMA mensagem do cliente, a plataforma recusa
+    // texto livre: só sai template aprovado. Guardar o vencimento aqui (em vez
+    // de recalcular varrendo mensagens) é o que permite à lista mostrar quais
+    // conversas ainda aceitam resposta livre sem uma consulta por linha.
+    "janelaExpiraEm": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Fim da janela de 24h de resposta livre. Recalculado a cada mensagem RECEBIDA"
+    },
+
+    "naoLidas": {
+      "type": "number",
+      "default": 0,
+      "minimum": 0,
+      "description": "Mensagens recebidas ainda não lidas no Connect"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["aberta", "arquivada"],
+      "default": "aberta",
+      "description": "Arquivada sai da caixa de entrada sem perder o histórico"
+    },
+    "responsavelUserId": {
+      "type": "string",
+      "description": "UsuarioSistema que assumiu o atendimento"
+    },
+    "responsavelNome": {
+      "type": "string",
+      "description": "Nome do responsável, desnormalizado"
+    },
+    "entidadeInternaId": {
+      "type": "string",
+      "description": "Entidade interna dona da conversa (Shopping Jurídico / Easy) — mesmo filtro de visibilidade do resto do sistema"
+    }
+  },
+  "required": ["telefone", "numeroId"],
+
+  // FECHADA PARA O NAVEGADOR.
+  //
+  // Aqui moram telefone pessoal e o que o cliente escreveu. Sem este bloco a
+  // entidade nasce legível pelo SDK do navegador, e aí qualquer pessoa com
+  // sessão no Central — inclusive quem não tem o módulo WhatsApp liberado —
+  // leria a caixa de entrada inteira pelo console, contornando a permissão e o
+  // recorte que `whatsappConversas` faz de propósito.
+  //
+  // O RLS vive AQUI, e não só no painel, para que o deploy aplique o fechamento
+  // junto com o código — mesma escolha de ChatMensagem e AuditoriaLog. As
+  // funções usam `asServiceRole`, que ignora RLS: nada do caminho novo quebra.
+  "rls": {
+    "read":   { "user_condition": { "role": "__negado__" } },
+    "create": { "user_condition": { "role": "__negado__" } },
+    "update": { "user_condition": { "role": "__negado__" } },
+    "delete": { "user_condition": { "role": "__negado__" } }
+  }
+}

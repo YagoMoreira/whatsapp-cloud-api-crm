@@ -1,0 +1,146 @@
+{
+  "name": "WhatsAppMensagem",
+  "type": "object",
+
+  // Uma linha por mensagem — mesma escolha de ChatMensagem, e pelo mesmo
+  // motivo: guardar a lista dentro da conversa cria corrida entre o webhook
+  // (que escreve quando o cliente responde) e a tela (que escreve quando o
+  // atendente envia). Aqui os dois escrevem linhas diferentes.
+  //
+  // O `wamid` é a chave de idempotência do canal. A Meta REENVIA o webhook
+  // quando não recebe 200 — e reenvia a mesma mensagem. Sem essa chave, uma
+  // instabilidade de rede vira mensagem duplicada na tela do atendente.
+  "properties": {
+    "conversaId": {
+      "type": "string",
+      "description": "WhatsAppConversa dona da mensagem"
+    },
+    "wamid": {
+      "type": "string",
+      "description": "ID da mensagem na Meta (wamid.*). Único: é por ele que reenvio de webhook e confirmação de status encontram a linha"
+    },
+    "direcao": {
+      "type": "string",
+      "enum": ["entrada", "saida"],
+      "description": "entrada = cliente falou; saida = nós falamos"
+    },
+    "tipo": {
+      "type": "string",
+      "enum": [
+        "texto",
+        "imagem",
+        "documento",
+        "audio",
+        "video",
+        "sticker",
+        "localizacao",
+        "contato",
+        "template",
+        "sistema",
+        "nao_suportado"
+      ],
+      "default": "texto",
+      "description": "Formato da mensagem. 'nao_suportado' guarda o que chegou sem virar erro — o atendente vê que algo chegou e pede pelo canal certo"
+    },
+    "texto": {
+      "type": "string",
+      "description": "Corpo de texto, ou a legenda quando a mensagem é mídia"
+    },
+
+    // Mídia: o que a Meta entrega é um id com URL de vida curta e protegida por
+    // token. O arquivo é baixado no webhook e guardado no armazenamento do app;
+    // `url` já é a cópia nossa, que não expira.
+    "midia": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "{ url, nome, mime, tamanho, mediaId } — url é a cópia guardada por nós, não a da Meta (que expira)"
+    },
+
+    // Saída por template (fora da janela de 24h).
+    "templateNome": {
+      "type": "string",
+      "description": "Nome do template aprovado na Meta que originou a mensagem"
+    },
+    "templateIdioma": {
+      "type": "string",
+      "description": "Código de idioma do template, ex.: pt_BR"
+    },
+    "templateVariaveis": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Valores substituídos no corpo do template, na ordem"
+    },
+
+    // ── Entrega ───────────────────────────────────────────────────────────
+    //
+    // O status não é decorativo: 'falhou' com o código da Meta é o que
+    // distingue "número não tem WhatsApp" de "janela fechada" de "template
+    // reprovado" — três problemas com três soluções diferentes.
+    "status": {
+      "type": "string",
+      "enum": ["pendente", "enviada", "entregue", "lida", "falhou", "recebida"],
+      "default": "pendente",
+      "description": "Ciclo de vida da mensagem. Entrada nasce 'recebida'; saída caminha pendente → enviada → entregue → lida"
+    },
+    "erroCodigo": {
+      "type": "string",
+      "description": "Código do erro devolvido pela Meta"
+    },
+    "erroMensagem": {
+      "type": "string",
+      "description": "Descrição do erro, como a Meta mandou"
+    },
+    "ocorridoEm": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Instante da mensagem: envio (saída) ou recebimento (entrada). É por ele que a thread ordena"
+    },
+    "entregueEm": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Confirmação de entrega no aparelho do cliente"
+    },
+    "lidaEm": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Confirmação de leitura pelo cliente (só quando ele tem recibo de leitura ligado)"
+    },
+
+    "autorUserId": {
+      "type": "string",
+      "description": "Quem enviou pelo Connect. Resolvido na portaria da função, nunca aceito do corpo da requisição"
+    },
+    "autorNome": {
+      "type": "string",
+      "description": "Nome de quem enviou, desnormalizado para a thread não carregar a lista de usuários"
+    },
+    "respondendoAWamid": {
+      "type": "string",
+      "description": "wamid da mensagem citada, quando a mensagem é resposta a outra"
+    },
+    "metadados": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Resto do payload que pode ser útil depois (categoria de conversa cobrada, coordenadas, vCard)"
+    }
+  },
+  "required": ["conversaId", "direcao"],
+
+  // FECHADA PARA O NAVEGADOR.
+  //
+  // Aqui moram telefone pessoal e o que o cliente escreveu. Sem este bloco a
+  // entidade nasce legível pelo SDK do navegador, e aí qualquer pessoa com
+  // sessão no Central — inclusive quem não tem o módulo WhatsApp liberado —
+  // leria a caixa de entrada inteira pelo console, contornando a permissão e o
+  // recorte que `whatsappConversas` faz de propósito.
+  //
+  // O RLS vive AQUI, e não só no painel, para que o deploy aplique o fechamento
+  // junto com o código — mesma escolha de ChatMensagem e AuditoriaLog. As
+  // funções usam `asServiceRole`, que ignora RLS: nada do caminho novo quebra.
+  "rls": {
+    "read":   { "user_condition": { "role": "__negado__" } },
+    "create": { "user_condition": { "role": "__negado__" } },
+    "update": { "user_condition": { "role": "__negado__" } },
+    "delete": { "user_condition": { "role": "__negado__" } }
+  }
+}
